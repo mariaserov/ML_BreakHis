@@ -8,9 +8,9 @@ import pandas as pd
 # path = kagglehub.dataset_download("ambarish/breakhis")
 # print("Path to dataset files:", path)
 
-# Load data
+# # Load data
 
-data_dir = "../data/breakhis/versions/4/BreaKHis_v1/BreaKHis_v1/histology_slides/breast"
+data_dir = "../data/versions/4/BreaKHis_v1/BreaKHis_v1/histology_slides/breast"
 metadata = []
 for root, dirs, files in os.walk(data_dir):
     for file in files:
