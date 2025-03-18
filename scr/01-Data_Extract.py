@@ -3,12 +3,12 @@ import os
 import numpy as np
 import pandas as pd
 
-# Get data from kaggle 
+# Get data from kaggle - use these two lines to get BreakHis data!
 
-# path = kagglehub.dataset_download("ambarish/breakhis")
-# print("Path to dataset files:", path)
+path = kagglehub.dataset_download("ambarish/breakhis")
+print("Path to dataset files:", path)
 
-# # Load data
+# # Load data - you don't need to do it if you're just getting BreakHis data
 
 data_dir = "../data/versions/4/BreaKHis_v1/BreaKHis_v1/histology_slides/breast"
 metadata = []
