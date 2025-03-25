@@ -6,75 +6,73 @@ import os
 
 import tensorflow as tf
 
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.preprocessing.image import load_img
-from tensorflow.keras.preprocessing.image import img_to_array
-from tensorflow.keras.preprocessing.image import array_to_img
+data_dir = "../../.cache/kagglehub/datasets/ambarish/breakhis/versions/4"
+metadata = []
+for root, dirs, files in os.walk(data_dir):
+    for file in files:
+        if file.endswith(".png"):
+            # Extract label from the folder structure
+            label = "malignant" if "malignant" in root else "benign"
+            
+            # Extract magnification 
+            
+            magnification = None
+            for part in root.split(os.sep):
+                if part.endswith("X") and part[:-1].isdigit(): 
+                    # magnification = part # turn to int
+                    magnification = int(part[:-1])
+                    break
+            
+            # Extract tumor subtype 
+            tumor_subtype = None
+            for part in root.split(os.sep):
+                if part in ["adenosis", "fibroadenoma", "phyllodes_tumor", "tubular_adenoma",  # Benign subtypes
+                           "ductal_carcinoma", "lobular_carcinoma", "mucinous_carcinoma", "papillary_carcinoma"]:                # Malignant subtypes
+                    tumor_subtype = part
+                    break
+            
+            # Append filepath, label, magnification, and tumor subtype to metadata
+            metadata.append((os.path.join(root, file), label, magnification, tumor_subtype))
 
 
-train_df = pd.read_csv("../data/toy_dataset.csv")  # CSV containing file paths & labels
+# Convert to DataFrame
+df = pd.DataFrame(metadata, columns=["filepath", "label", "magnification", "tumor_subtype"])
 
-save_dir = "../data/augmented_images"
-os.makedirs(save_dir, exist_ok=True)  # Create the directory if it doesn't exist
+df.to_csv("../data/metadata.csv")
 
+# Debugging: Check the shape and first few rows of the DataFrame
+print(f"DataFrame shape: {df.shape}")
+print(df.head())
 
-# Create an image data generator with augmentation
-datagen = ImageDataGenerator(
-    rotation_range = 45,   # Rotate images up to 30 degrees
-    horizontal_flip = True,   # Flip images horizontally
-    rescale=1./255      #normalise pixel values
-)
+def augment_and_normalize_images(df, output_folder, target_size=(150, 150)):
+    # Create an image data generator with augmentation : rotation and flip
+    datagen = tf.keras.preprocessing.image.ImageDataGenerator(rotation_range=90, horizontal_flip=True)
 
-# Load images in batches
-train_generator = datagen.flow_from_dataframe(
-    dataframe = train_df,
-    directory = "" ,  # Folder where images are stored
-    x_col="filepath",  # Column containing image file paths
-    y_col="label",  # Column with target labels (label or tumor_subtype)
-    
-    #target_size=(150, 150),  # resize image
-    batch_size=32,  # 32 images per batch
-    class_mode='binary',  #outcome ('categprical' for multiclass)
+    for idx, row in df.iterrows():
+        filepath, label = row["filepath"], row["label"]
+        
+        image = cv2.imread(filepath)  # Read image
+        if image is None:
+            print(f"Could not load: {filepath}")
+            continue
+        
+        image = cv2.resize(image, target_size)  # Resize
+        # Convert BGR to RGB because OpenCV loads in BGR and TensorFlow needs RGB
+        x = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  
+        x = x.astype('float32') / 255.0  # Normalize
+        x = x.reshape((1,) + x.shape)  # Reshape for ImageDataGenerator
+        
+        image = image.astype('float32') / 255.0  # Normalize
+        save_path = os.path.join(output_folder, f"original_{idx}.png")
 
-    save_to_dir=save_dir,      # Save augmented images
-    save_prefix='aug',         # Prefix for saved images
-    save_format='png'         # Format of saved images
-)
-
-
-
-# List to store new image metadata
-augmented_data = []
-
-# Process each image in the dataset
-for index, row in train_df.iterrows():
-    img_path = row["filepath"]
-    
-    # Load image
-    try:
-        image = load_img(img_path)  # Load original image
-        image = img_to_array(image)  # Convert to array
-        image = np.expand_dims(image, axis=0)  # Add batch dimension
-
-        # Generate one augmented image
-        batch = next(datagen.flow(image, batch_size=1))
-        new_filename = f"aug_{index}.png"
-        new_filepath = os.path.join(save_dir, new_filename)
-
-        # Save the augmented image
-        array_to_img(batch[0]).save(new_filepath)
-
-        # Append new metadata row
-        augmented_data.append([new_filepath] + row.tolist()[1:])  # Keep original metadata
-
-    except Exception as e:
-        print(f"Error processing {img_path}: {e}")
-
-# Create new DataFrame with augmented data
-augmented_df = pd.DataFrame(augmented_data, columns=train_df.columns)
-
-# Save new CSV with augmented image paths & metadata
-augmented_df.to_csv("../data/augmented_dataset.csv", index=False)
-
-print(f"Augmented dataset saved to ../data/augmented_dataset.csv")
+        # save normalized original
+        normalized_image = (x[0] * 255).astype(np.uint8)  # Convert back to uint8 for saving
+        cv2.imwrite(save_path, cv2.cvtColor(normalized_image, cv2.COLOR_RGB2BGR))
+        
+        if label == "malignant":
+            continue
+        
+        # generate one augmented image per original
+        for i, batch in enumerate(datagen.flow(x, batch_size=1, save_to_dir=output_folder, save_prefix=f'augmented_{idx}', save_format='png')):
+            if i == 0:
+                break
