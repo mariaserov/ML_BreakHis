@@ -1,0 +1,152 @@
+# Import
+
+import timm
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from urllib.request import urlopen
+from PIL import Image
+from torchvision import transforms
+from torchvision import transforms
+from torch.utils.data import DataLoader, random_split, Dataset, random_split
+import pandas as pd
+
+# Set up dataset 
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),  # Converts to [0, 1]
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],  # ImageNet stats
+                         std=[0.229, 0.224, 0.225]),
+])
+
+# Define custom dataset
+
+class BreakHisDataset(Dataset): # Subclass Dataset, which is required for using DataLoader
+    def __init__(self, csv_path, transform=None):
+        self.df = pd.read_csv(csv_path)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        img_path = self.df.loc[idx, 'filepath']
+        label = self.df.loc[idx, 'label']
+        image = Image.open(img_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+        return image, torch.tensor(label, dtype=torch.long)
+
+dataset_train = BreakHisDataset(csv_path="../data/augmented_train_dataset.csv", transform=transform) # Load the data
+dataset_test = BreakHisDataset(csv_path="../data/new_test.csv", transform=transform)
+
+# Create iterable data loaders
+
+train_loader = DataLoader(dataset_train, batch_size=16, shuffle=True)
+test_loader = DataLoader(dataset_test, batch_size=16, shuffle=False)
+
+# Set up the training loop for different architectures
+
+n_epochs = 10
+
+models = ['Head only', 'Stage 4', 'Stages 3-4', 'Stages 2-4', 'Stages 1-4']
+perf_train = pd.DataFrame(index=range(n_epochs), columns=models)
+perf_test = pd.DataFrame(index=range(n_epochs), columns=models)
+
+# Initialise loss criterion & optimiser
+criterion = nn.CrossEntropyLoss()
+
+# Sequentially unfreeze stages from top down
+
+n_stages = 4
+
+for i in range(n_stages+1):
+    
+    # Initialise model
+    
+    model = timm.create_model('convnextv2_atto.fcmae', pretrained=True, num_classes=2)
+    optimiser = optim.Adam(
+        [p for p in model.parameters() if p.requires_grad], 
+        lr=1e-3)
+    
+    for param in model.parameters():
+        param.requires_grad = False
+        
+    for param in model.head.parameters():
+        param.requires_grad = True
+    
+    n_stages_to_unfreeze = i
+    print(f' {i}. Stages to unfreeze: {i}')
+    
+    # Unfreeze stages
+    for a in range(n_stages - n_stages_to_unfreeze, n_stages):
+        for param in model.stages[a].parameters():
+            param.requires_grad = True
+    
+    # Initialise tracking 
+    
+    train_accuracies = []
+    test_accuracies = []
+    train_losses = []
+    test_losses = []
+    
+    for epoch in range(n_epochs):
+        
+        model.train()
+        
+        running_loss = 0
+        correct = 0
+        total = 0
+        
+        for images, labels in train_loader:
+            optimiser.zero_grad()
+            pred = model(images) # forward pass
+            loss = criterion(pred, labels) 
+            loss.backward() # updates model.grad with partial derivatives calc via chain rule
+            optimiser.step() # take a step in negative direction of grad using calculated derivatives
+            
+            running_loss += loss.item() * images.size(0) # Accumulate loss per batch
+            
+            _, preds = torch.max(pred, 1) # Take the maximum one as the class with the highest predicted probability => predicted class
+            
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+        
+        epoch_train_loss = running_loss/total
+        train_losses.append(epoch_train_loss)
+        
+        epoch_train_accuracy = correct/total 
+        train_accuracies.append(epoch_train_accuracy)
+        
+        model.eval()
+        
+        running_loss_test = 0
+        correct_test = 0
+        total_test = 0
+        
+        with torch.no_grad():
+            for images, labels in test_loader:
+                pred = model(images)
+                loss = criterion(pred, labels)
+                running_loss_test += loss.item() * images.size(0)
+                _, preds = torch.max(pred,1)
+                
+                correct_test += (preds == labels).sum().item()
+                total_test += labels.size(0)
+            
+            
+        test_losses.append(running_loss_test/total_test)
+            
+        epoch_test_accuracy = correct_test/total_test
+        test_accuracies.append(epoch_test_accuracy)
+        
+        print(f"Epoch {epoch+1}/{n_epochs}: Train Accuracy {epoch_train_accuracy}, Test Accuracy {epoch_test_accuracy}")
+    
+    perf_train.iloc[:,i] = train_accuracies
+    perf_test.iloc[:,i] = test_accuracies
+
+perf_train.to_csv('convnext_v2_outputs/arc_perf_train.csv')
+perf_test.to_csv('convnext_v2_outputs/arc_perf_test.csv')
+print(perf_train)
+print(perf_test)
