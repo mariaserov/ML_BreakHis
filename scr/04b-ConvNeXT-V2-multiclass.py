@@ -11,8 +11,11 @@ from torchvision import transforms
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split, Dataset, random_split
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
 n_epochs = 20
+
+folder_to_save = "array_job_output_multiclass"
 
 # Array job 
 
@@ -35,6 +38,9 @@ class BreakHisDataset(Dataset): # Subclass Dataset, which is required for using 
     def __init__(self, csv_path, transform=None):
         self.df = pd.read_csv(csv_path)
         self.transform = transform
+        self.le = LabelEncoder()
+        self.df['label_diagnosis'] = self.le.fit_transform(self.df['tumor_subtype'])
+        self.class_names = list(self.le.classes_)
 
     def __len__(self):
         return len(self.df)
@@ -42,10 +48,11 @@ class BreakHisDataset(Dataset): # Subclass Dataset, which is required for using 
     def __getitem__(self, idx):
         img_path = self.df.loc[idx, 'filepath']
         label = self.df.loc[idx, 'label']
+        subtype = self.df.loc[idx, 'label_diagnosis']   
         image = Image.open(img_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
-        return image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long), torch.tensor(subtype, dtype=torch.long)
 
 
 ## TEMP - UNCOMMENT LATER 
@@ -169,7 +176,7 @@ perf_test = pd.DataFrame(index=range(n_epochs), columns=[experiment])
 
 # Initialise model
     
-model = timm.create_model('convnextv2_atto.fcmae', pretrained=True, num_classes=2)
+model = timm.create_model('convnextv2_atto.fcmae', pretrained=True, num_classes=8)
 
 for param in model.parameters():
     param.requires_grad = False
@@ -204,7 +211,7 @@ for epoch in range(n_epochs):
     correct = 0
     total = 0
     
-    for images, labels in train_loader:
+    for images, _, labels in train_loader:
         optimiser.zero_grad()
         pred = model(images) # forward pass
         loss = criterion(pred, labels) 
@@ -231,7 +238,7 @@ for epoch in range(n_epochs):
     total_test = 0
     
     with torch.no_grad():
-        for images, labels in test_loader:
+        for images, _, labels in test_loader:
             pred = model(images)
             loss = criterion(pred, labels)
             running_loss_test += loss.item() * images.size(0)
@@ -251,8 +258,8 @@ for epoch in range(n_epochs):
 perf_train.loc[:,experiment] = train_accuracies
 perf_test.loc[:,experiment] = test_accuracies
 
-perf_train.to_csv(f'convnext_v2_outputs/array_job_output/{experiment}_train.csv')
-perf_test.to_csv(f'convnext_v2_outputs/array_job_output/{experiment}_test.csv')
+perf_train.to_csv(f'convnext_v2_outputs/{folder_to_save}/{experiment}_train.csv')
+perf_test.to_csv(f'convnext_v2_outputs/{folder_to_save}/{experiment}_test.csv')
 
 print(perf_train)
 print(perf_test)
