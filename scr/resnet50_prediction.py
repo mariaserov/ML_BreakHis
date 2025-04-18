@@ -1,6 +1,7 @@
 #####prediction
 
 import pandas as pd
+import numpy as np
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications.resnet50 import preprocess_input
 
