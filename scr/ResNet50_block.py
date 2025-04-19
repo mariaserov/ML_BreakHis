@@ -43,7 +43,9 @@ os.chdir("/rds/general/user/ft824/home/ML_BreakHis/scr")
 
 train_df = pd.read_csv('../data/augmented_train_dataset.csv')
 test_df = pd.read_csv('../data/new_test.csv')
+train_df['label'] = train_df['label'].astype(str)
 test_df['label'] = test_df['label'].astype(str)
+
 
 image_size = 224
 datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
@@ -93,6 +95,14 @@ else:
             layer.trainable = True
         print(f"Unfreezing block {i} → layers {block_start[i]} to {block_end[i]}")
 
+# Compile the model
+model.compile(
+    optimizer=Adam(learning_rate=0.0001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+
 
 # ================================
 # 6. Train
@@ -131,5 +141,5 @@ plt.ylabel('Loss')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig(f"training_model_unfreeze_{num_blocks_to_unfreeze}_blocks.pdf")
+plt.savefig(f"training_model_last_{num_blocks_to_unfreeze}_blocks.pdf")
 plt.close()
