@@ -13,8 +13,7 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
 n_epochs = 10
-folder_to_save = "array_job_output_HPO"
-
+folder_to_save = "array_job_output_HPO_milticlass"
 
 # Array job 
 
@@ -125,7 +124,7 @@ for epoch in range(n_epochs):
     correct = 0
     total = 0
     
-    for images, labels, _ in train_loader_inloop:
+    for images, _, labels in train_loader_inloop:
         images = images.to(device)
         labels = labels.to(device)
         optimiser.zero_grad()
@@ -154,7 +153,7 @@ for epoch in range(n_epochs):
     total_test = 0
     
     with torch.no_grad():
-        for images, labels, _ in test_loader_inloop:
+        for images, _, labels in test_loader_inloop:
             images = images.to(device)
             labels = labels.to(device)
             pred = model(images)
