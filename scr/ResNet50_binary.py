@@ -49,7 +49,8 @@ train_df = pd.read_csv('../data/augmented_train_dataset.csv')
 test_df = pd.read_csv('../data/new_test.csv')
 
 #convert labels to string
-train_df['label'] = train_df['label'].astype(str)
+#train_df['label'] = train_df['label'].astype(str)
+
 test_df['label'] = test_df['label'].astype(str)
 
 

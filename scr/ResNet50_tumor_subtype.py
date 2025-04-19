@@ -31,7 +31,7 @@ x = base_model.output
 x = GlobalAveragePooling2D()(x)        # More efficient than Flatten for ResNet
 x = Dense(1024, activation='relu')(x)
 x = Dropout(0.5)(x)
-predictions = Dense(2, activation='softmax')(x)
+predictions = Dense(8, activation='softmax')(x)
 
 # Define the full model
 model = Model(inputs=base_model.input, outputs=predictions)
