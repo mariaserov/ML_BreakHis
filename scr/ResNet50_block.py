@@ -83,16 +83,16 @@ model = Model(inputs=base_model.input, outputs=predictions)
 # ================================
 # 5. Unfreeze Last N Blocks
 # ================================
-blocks_to_unfreeze = list(range(total_blocks - num_blocks_to_unfreeze, total_blocks))
 
-for i in blocks_to_unfreeze:
-    for layer in model.layers[block_start[i]:block_end[i] + 1]:
-        layer.trainable = True
-    print(f"Unfreezing block {i} → layers {block_start[i]} to {block_end[i]}")
+if num_blocks_to_unfreeze == 0:
+    print("Training classifier only. All base layers remain frozen.")
+else:
+    blocks_to_unfreeze = list(range(total_blocks - num_blocks_to_unfreeze, total_blocks))
+    for i in blocks_to_unfreeze:
+        for layer in model.layers[block_start[i]:block_end[i] + 1]:
+            layer.trainable = True
+        print(f"Unfreezing block {i} → layers {block_start[i]} to {block_end[i]}")
 
-model.compile(optimizer=Adam(learning_rate=0.0001),
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
 
 # ================================
 # 6. Train
@@ -131,5 +131,5 @@ plt.ylabel('Loss')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig(f"training_history_last_{num_blocks_to_unfreeze}_blocks.pdf")
+plt.savefig(f"training_model_unfreeze_{num_blocks_to_unfreeze}_blocks.pdf")
 plt.close()
