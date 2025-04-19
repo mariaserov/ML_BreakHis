@@ -31,7 +31,7 @@ x = base_model.output
 x = GlobalAveragePooling2D()(x)        # More efficient than Flatten for ResNet
 x = Dense(1024, activation='relu')(x)
 x = Dropout(0.5)(x)
-predictions = Dense(2, activation='softmax')(x)
+predictions = Dense(8, activation='softmax')(x)
 
 # Define the full model
 model = Model(inputs=base_model.input, outputs=predictions)
@@ -47,14 +47,13 @@ model.compile(
 # Load your CSV files
 train_df = pd.read_csv('../data/augmented_train_dataset.csv')
 test_df = pd.read_csv('../data/new_test.csv')
+train_df['filepath'] = train_df['filepath'].str.replace(r"^\.\./", "../data/", regex=True)
 
 #convert labels to string
-train_df['label'] = train_df['label'].astype(str)
-test_df['label'] = test_df['label'].astype(str)
-
+#train_df['label'] = train_df['label'].astype(str)
+#test_df['label'] = test_df['label'].astype(str)
 
 image_size = 224  # for ResNet50
-
 
 # Define the ImageDataGenerator with preprocessing
 datagen = ImageDataGenerator(preprocessing_function=
@@ -65,7 +64,7 @@ preprocess_input)
 train_generator = datagen.flow_from_dataframe(
     dataframe=train_df,
     x_col='filepath',    # column with image file paths
-    y_col='label',       # column with image labels
+    y_col='tumor_subtype',       # column with image labels
     target_size=(image_size, image_size),  # resizing to match ResNet50 input size
     batch_size=32,
     class_mode='categorical' # multi-class classification
@@ -75,7 +74,7 @@ train_generator = datagen.flow_from_dataframe(
 test_generator = datagen.flow_from_dataframe(
     dataframe=test_df,
     x_col='filepath',    # column with image file paths
-    y_col='label',       # column with image labels
+    y_col='tumor_subtype',       # column with image labels
     target_size=(image_size, image_size),  # resizing to match ResNet50 input size
     batch_size=16,
     class_mode='categorical'
@@ -88,7 +87,7 @@ callbacks = [
 
 history = model.fit(
         train_generator,
-        epochs = 50,
+        epochs = 20,
         validation_data=test_generator,
         batch_size =32,
         callbacks=callbacks
@@ -115,6 +114,6 @@ plt.legend()
 plt.tight_layout()
 
 # Save as PDF
-plt.savefig("training_history.pdf", format='pdf')  # You can specify a full path too
+plt.savefig("training_tumor_subtype.pdf", format='pdf')  # You can specify a full path too
 
 plt.show()
