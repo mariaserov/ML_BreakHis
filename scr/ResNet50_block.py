@@ -46,6 +46,8 @@ test_df = pd.read_csv('../data/new_test.csv')
 train_df['label'] = train_df['label'].astype(str)
 test_df['label'] = test_df['label'].astype(str)
 
+train_df['filepath'] = train_df['filepath'].str.replace(r"^\.\./", "../data/", regex=True)
+
 
 image_size = 224
 datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
