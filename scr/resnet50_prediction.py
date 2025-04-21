@@ -2,18 +2,36 @@
 
 import pandas as pd
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications.resnet50 import preprocess_input
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score,ConfusionMatrixDisplay
+from tensorflow.keras.models import load_model
+
+# List of model filenames to evaluate
+model_files = [
+    "resnet50_last_5_blocks_multiclass.h5",
+    "resnet50_last_4_blocks_multiclass.h5",
+    "resnet50_last_3_blocks_multiclass.h5",
+    "resnet50_last_2_blocks_multiclass.h5",
+    "resnet50_last_1_blocks_multiclass.h5",
+    "resnet50_last_0_blocks_multiclass.h5",
+    # Add more models here if needed
+]
+
+#load train and unseen generator
 
 #Define generator for the unseen/test data
 datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
 
 train_df = pd.read_csv("../data/augmented_train_dataset.csv")
+train_df['filepath'] = train_df['filepath'].str.replace(r"^\.\./", "../data/", regex=True)
+
 #convert labels to string
-train_df['label'] = train_df['label'].astype(str)
+#train_df['label'] = train_df['label'].astype(str)
+
 holdout_data = pd.read_csv("../data/new_holdout.csv")
 
 image_size = 224  # for ResNet50
@@ -21,7 +39,7 @@ image_size = 224  # for ResNet50
 train_generator = datagen.flow_from_dataframe(
     dataframe=train_df,
     x_col='filepath',    # column with image file paths
-    y_col='label',       # column with image labels
+    y_col='tumor_subtype',       # column with image labels
     target_size=(image_size, image_size),  # resizing to match ResNet50 input size
     batch_size=32,
     class_mode='categorical' # multi-class classification
@@ -38,74 +56,60 @@ unseen_generator = datagen.flow_from_dataframe(
 )
 
 
-from tensorflow.keras.models import load_model
-
-#load trained resnet model
-model = load_model("resnet50_best_model.h5")
-predictions = model.predict(unseen_generator)
-
-### get labels
-predicted_classes = np.argmax(predictions, axis=1)  # for categorical output
-
+# Class index mappings
 class_indices = train_generator.class_indices
-label_map = {0: "benign", 1: "malignant"}
+index_to_label = {v: k for k, v in class_indices.items()}
+labels = list(class_indices.keys())
 
-predicted_labels = [label_map[i] for i in predicted_classes]
-
-print(train_generator.class_indices)
-
-
-# Assuming you have a list of file paths and predicted labels
-results_df = pd.DataFrame({
-    'filename': unseen_generator.filepath,
-    'prediction': predicted_labels
-})
-
-results_df.to_csv("predictions.csv", index=False)
-
-##evaluate accuracy
-
-loss, accuracy = model.evaluate(unseen_generator)
-with open("evaluation.txt", "w") as f:
-    f.write(f"Loss: {loss}\n")
-    f.write(f"Accuracy: {accuracy}\n")
+# True labels from generator
+true_classes = holdout_data['tumor_subtype']
+# True labels from holdout dataframe (already strings)
+true_labels = holdout_data['tumor_subtype'].tolist()
 
 
-# Example: saving accuracy and loss from training history
-plt.figure(figsize=(12, 4))
+for model_path in model_files:
+    print(f"\n--- Evaluating {model_path} ---")
+    
+    model_name = os.path.splitext(os.path.basename(model_path))[0]
 
-plt.subplot(1, 2, 1)
-plt.plot(predictions.predictions['accuracy'], label='train_accuracy')
-plt.plot(predictions.prediction['val_accuracy'], label='val_accuracy')
-plt.legend()
-plt.title("Model Accuracy")
+    # Load model and predict
+    model = load_model(model_path)
+    predictions = model.predict(unseen_generator)
+    predicted_classes = np.argmax(predictions, axis=1)
+    predicted_labels = [index_to_label[i] for i in predicted_classes]
 
-plt.subplot(1, 2, 2)
-plt.plot(predictions.predictions['loss'], label='train_loss')
-plt.plot(predictions.predictions['val_loss'], label='val_loss')
-plt.legend()
-plt.title("Model Loss")
+    # Classification report
+    report_dict = classification_report(true_labels, predicted_labels, output_dict=True)
+    report_df = pd.DataFrame(report_dict).transpose()
 
+    # Add accuracy manually
+    accuracy = accuracy_score(true_labels, predicted_labels)
+    report_df.loc['accuracy'] = [accuracy, None, None, None]
 
-plt.tight_layout()
+    # Confusion matrix
+    cm = confusion_matrix(true_labels, predicted_labels, labels=labels)
+    fpr_list = []
+    fnr_list = []
 
-# Save as PDF
-plt.savefig("training_history.pdf", format='pdf')  # You can specify a full path too
+    for i in range(len(cm)):
+        TP = cm[i, i]
+        FN = sum(cm[i, :]) - TP
+        FP = sum(cm[:, i]) - TP
+        TN = cm.sum() - (TP + FP + FN)
+        fpr = FP / (FP + TN) if (FP + TN) != 0 else 0
+        fnr = FN / (FN + TP) if (FN + TP) != 0 else 0
+        fpr_list.append(fpr)
+        fnr_list.append(fnr)
 
-plt.show()
+    report_df['FPR'] = fpr_list + [None] * (len(report_df) - len(fpr_list))
+    report_df['FNR'] = fnr_list + [None] * (len(report_df) - len(fnr_list))
 
-###confusion matrix
-true_labels = holdout_data['label'].astype(int).values
+    # Save metrics and confusion matrix
+    metrics_filename = f"{model_name}_metrics.csv"
+    cm_filename = f"{model_name}_confusion_matrix.csv"
 
-cm = confusion_matrix(true_labels, predicted_classes)
+    report_df.to_csv(metrics_filename)
+    pd.DataFrame(cm, index=labels, columns=labels).to_csv(cm_filename)
 
-# If you're using numeric labels (0 and 1):
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Benign", "Malignant"])
-
-# If using string labels, just make sure labels match:
-# disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["benign", "malignant"])
-
-disp.plot(cmap=plt.cm.Blues)
-plt.title("Confusion Matrix")
-plt.show()
+    print(f"Saved: {metrics_filename}, {cm_filename}")
 

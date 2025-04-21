@@ -1,5 +1,5 @@
 #PBS -l walltime=24:00:00
-#PBS -l select=1:ncpus=4:mem=200gb
+#PBS -l select=1:ncpus=4:mem=400gb
 #PBS -N ResNet50HPO
 #PBS -J 1-24
 

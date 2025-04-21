@@ -81,11 +81,18 @@ test_generator = datagen.flow_from_dataframe(
 # ==========================
 # 5. Model setup
 # ==========================
+layers_to_freeze = [
+        "conv1_pad", "conv1_conv", "conv1_bn", "conv1_relu",
+        "pool1_pad", "pool1_pool"
+    ]
 
 def create_model(weight_decay=0.0):
     base_model = ResNet50(include_top=False, input_shape=(224, 224, 3), weights='imagenet')
     for layer in base_model.layers:
-        layer.trainable = True
+        if layer.name in layers_to_freeze:
+            layer.trainable = False
+        else:
+            layer.trainable = True
 
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
@@ -116,15 +123,15 @@ model.compile(
 # ==========================
 # 8. Train
 # ==========================
-os.makedirs("models", exist_ok=True)
-os.makedirs("logs", exist_ok=True)
-os.makedirs("plots", exist_ok=True)
+os.makedirs("models_train4", exist_ok=True)
+os.makedirs("logs_train4", exist_ok=True)
+os.makedirs("plots_train4", exist_ok=True)
 
-config_name = f"job{job_index}_bs{config['batch_size']}_lr{config['learning_rate']}_{config['optimizer']}_wd{config['weight_decay']}"
+config_name = f"train4_job{job_index}_bs{config['batch_size']}_lr{config['learning_rate']}_{config['optimizer']}_wd{config['weight_decay']}"
 
 callbacks = [
     EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-    ModelCheckpoint(f"models/{config_name}.h5", save_best_only=True)
+    ModelCheckpoint(f"models_train4/{config_name}.h5", save_best_only=True)
 ]
 
 history = model.fit(
@@ -138,7 +145,7 @@ history = model.fit(
 # 9. Save Plot & History
 # ==========================
 
-pd.DataFrame(history.history).to_csv(f"logs/history_{config_name}.csv", index=False)
+pd.DataFrame(history.history).to_csv(f"logs_train4/history_{config_name}.csv", index=False)
 
 plt.figure(figsize=(12, 5))
 
@@ -161,5 +168,5 @@ plt.ylabel("Loss")
 plt.legend()
 
 plt.tight_layout()
-plt.savefig(f"plots/plot_{config_name}.pdf")
+plt.savefig(f"plots_train4/plot_{config_name}.pdf")
 plt.close()
