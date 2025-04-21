@@ -7,8 +7,9 @@ import pandas as pd
 
 path = kagglehub.dataset_download("ambarish/breakhis")
 print("Path to dataset files:", path)
+print("Run this to copy them into the data folder (alternatively, create a symlink):\n", "cp -r", path[:-2], "../data/")
 
-# # Load data - you don't need to do it if you're just getting BreakHis data
+# Load data - you don't need to do it if you're just getting BreakHis data
 
 data_dir = "../data/versions/4/BreaKHis_v1/BreaKHis_v1/histology_slides/breast"
 metadata = []
