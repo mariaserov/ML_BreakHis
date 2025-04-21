@@ -22,8 +22,9 @@ from sklearn.metrics import confusion_matrix
 import numpy as np
 
 n_epochs = 30
-patience = 5                   # how many epochs to wait
-
+n_classes = 8
+patience = 5                  # how many epochs to wait
+folder = 'convnext_v2_outputs/Single_Model/Multi-class'
 
 # Array job 
 
@@ -56,11 +57,6 @@ class BreakHisDataset(Dataset): # Subclass Dataset, which is required for using 
             image = self.transform(image)
         return image, torch.tensor(label, dtype=torch.long), torch.tensor(subtype, dtype=torch.long)
 
-# # For testing on toy
-# dataset = BreakHisDataset(csv_path="../data/toy_data/toy_metadata.csv", transform=transform) # Load the data
-# train_size = int(0.8 * len(dataset))
-# test_size = len(dataset) - train_size
-# train, test = random_split(dataset, [train_size, test_size])
 
 # For full dataset
 train = BreakHisDataset(csv_path="../data/augmented_train_dataset.csv", transform=transform) # Load the data
@@ -69,13 +65,15 @@ test = BreakHisDataset(csv_path="../data/new_test.csv", transform=transform)
 train_loader = DataLoader(train, batch_size=params['batch_size'], shuffle=True)
 test_loader = DataLoader(test, batch_size=params['batch_size'], shuffle=False)
 
-folder = 'convnext_v2_outputs/Single_Model'
-perfcols = ['Epoch', 'Train_Loss', 'Train_Acc', 'Train_Recall', 'Train_Spec', 'Train_F1', 'Train_AUC',
-          'Test_Loss', 'Test_Acc', 'Test_Recall', 'Test_Spec', 'Test_F1', 'Test_AUC' ]
-df = pd.read_csv(f"{folder}/Single_model_binary.csv", index_col = 'Unnamed: 0') # tracking performance
+# Tracking class-specific metrics 
+perfcols_perclass = ['Epoch', 'Class', 'Train_Recall', 'Train_Spec', 'Train_F1', 'Train_AUC',
+          'Test_Recall', 'Test_Spec', 'Test_F1', 'Test_AUC' ]
 
+# Tracking general metrics
+perfcols_gen = ['Epoch', 'Train_Loss', 'Train_Acc', 'Test_Loss', 'Test_Acc']
+df_gen = pd.DataFrame(columns = perfcols_gen)
 
-model = timm.create_model('convnextv2_atto.fcmae', pretrained=True, num_classes=2)
+model = timm.create_model('convnextv2_atto.fcmae', pretrained=True, num_classes=8)
 for param in model.parameters(): # Freeze all
     param.requires_grad = False  
 for param in model.head.parameters(): # Unfreeze head
@@ -87,21 +85,16 @@ for a in range(1, 4):
 optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad],lr=params['lr'], weight_decay = params['weight_decay'])
 criterion = nn.CrossEntropyLoss()
 
-train_loss = []
-test_loss = []
-train_acc = []
-test_acc = []
-train_recall = []
-test_recall = []
-train_spec = []
-test_spec = []
-train_f1= []
-test_f1= []
-train_auc= []
-test_auc= []
+train_recall = [ [] for _ in range(n_classes) ]
+train_spec   = [ [] for _ in range(n_classes) ]
+train_f1     = [ [] for _ in range(n_classes) ]
+train_auc    = [ [] for _ in range(n_classes) ]
+test_recall = [ [] for _ in range(n_classes) ]
+test_spec   = [ [] for _ in range(n_classes) ]
+test_f1     = [ [] for _ in range(n_classes) ]
+test_auc    = [ [] for _ in range(n_classes) ]
 
 # Define values for early stopping
-
 
 best_val_loss = float('inf')        # “best so far”
 counter       = 0                   # epochs since last improvement
@@ -112,16 +105,16 @@ for epoch in range(n_epochs):
     train_labels_list = []
     train_probs_list = []
     train_preds_list = []
-
-    model.train()
     running_loss = 0
 
-    for image, label, _ in train_loader:
+    model.train()
+
+    for image, _, label in train_loader:
 
         optimizer.zero_grad()
         outputs = model(image)
-        probs = torch.softmax(outputs, dim=1)[:,1]
-        train_probs_list.append(probs)
+        probs = torch.softmax(outputs, dim=1)
+        train_probs_list.append(probs.detach()) # N, n_classes
         train_labels_list.append(label)
         loss = criterion(outputs, label)
         loss.backward()
@@ -138,38 +131,36 @@ for epoch in range(n_epochs):
 
     cm = confusion_matrix(all_train_labels, all_train_preds)
     total = cm.sum()
-    auc_train = auc(all_train_labels, all_train_probs)
-    
-    tp = cm[1,1]
-    fn = cm[1, 0]
-    fp = cm[0,1]
-    tn = cm[0,0]
-    rec = tp/(tp+fn) if (tp+fn) >0 else 0
-    spec = tn/(tn+fp) if (tn+fp) >0 else 0
-    f1 = tp / (tp+0.5*(fp+fn)) if (tp+0.5*(fp+fn))>0 else 0
-    
 
+    for k in range(n_classes):
+        tp = cm[k,k]
+        fn = cm[k, :].sum() - tp
+        fp = cm[:, k].sum() - tp
+        tn = total - (tp+fn+fp)
+        rec = tp/(tp+fn) if (tp+fn) >0 else 0
+        spec = tn/(tn+fp) if (tn+fp) >0 else 0
+        f1 = tp / (tp+0.5*(fp+fn)) if (tp+0.5*(fp+fn))>0 else 0
+        auck = auc((all_train_labels == k).astype(int),all_train_probs[:, k])
 
-    metric_lists_train = [train_loss, train_acc, train_recall, train_spec, train_f1, train_auc]
-    metrics_train = [running_loss/total, (tp+tn)/total, rec, spec, f1, auc_train]
-
-    for i in range(len(metric_lists_train)):
-        metric_lists_train[i].append(metrics_train[i])
+        train_recall[k].append(rec)
+        train_spec[k].append(spec)
+        train_f1[k].append(f1)
+        train_auc[k].append(auck)
     
     model.eval()
     
     running_loss_test = 0
-    total_test = 0
+
     test_labels_list = []
     test_probs_list = []
     test_preds_list = []
     
     with torch.no_grad():
-        for image, label, _ in test_loader:
+        for image, _, label in test_loader:
             
             outputs = model(image)
-            probs = torch.softmax(outputs, dim=1)[:,1]
-            test_probs_list.append(probs)
+            probs = torch.softmax(outputs, dim=1)
+            test_probs_list.append(probs.detach())
             test_labels_list.append(label)
             loss = criterion(outputs, label)
             running_loss_test += loss.item() * image.size(0)
@@ -182,28 +173,27 @@ for epoch in range(n_epochs):
         all_test_probs  = torch.cat(test_probs_list).detach().numpy()
         all_test_preds = torch.cat(test_preds_list).detach().numpy()
         
-        cm = confusion_matrix(all_test_labels, all_test_preds)
-        total_test = cm.sum()
-        auc_test = auc(all_test_labels, all_test_probs)
+        cm_test = confusion_matrix(all_test_labels, all_test_preds)
+        total_test = cm_test.sum()
         
-        tp_test = cm[1,1]
-        fn_test = cm[1, 0]
-        fp_test = cm[0,1]
-        tn_test = cm[0,0]
+    for k in range(n_classes):
+        tp_test = cm_test[k,k]
+        fn_test = cm_test[k, :].sum() - tp_test
+        fp_test = cm_test[:, k].sum() - tp_test
+        tn_test = total_test - (tp_test+fn_test+fp_test)
         rec_test = tp_test/(tp_test+fn_test) if (tp_test+fn_test) >0 else 0
         spec_test = tn_test/(tn_test+fp_test) if (tn_test+fp_test) >0 else 0
         f1_test = tp_test / (tp_test+0.5*(fp_test+fn_test)) if (tp_test+0.5*(fp_test+fn_test))>0 else 0
+        auck_test = auc((all_test_labels == k).astype(int),all_test_probs[:, k])
 
-        
-        metric_lists_test = [test_loss, test_acc, test_recall, test_spec, test_f1, test_auc]
-        metrics_test = [running_loss_test/total_test, (tp_test+tn_test)/total_test, rec_test, spec_test, f1_test, auc_test]
+        test_recall[k].append(rec_test)
+        test_spec[k].append(spec_test)
+        test_f1[k].append(f1_test)
+        test_auc[k].append(auck_test)
 
-        for i in range(len(metric_lists_test)):
-            metric_lists_test[i].append(metrics_test[i])
-    
-    row = pd.DataFrame(data=[[f"Epoch{epoch+1}"] + metrics_train + metrics_test], columns = perfcols)
-    df = pd.concat([df, row]).reset_index(drop=True)
-    print(f"Epoch {epoch+1}/{n_epochs}: Train Accuracy {(tp+tn)/total}, Test Accuracy {(tp_test+tn_test)/total_test}")
+    row = pd.DataFrame(data=[[epoch, running_loss, cm.trace() / cm.sum(), running_loss_test, cm_test.trace() / cm_test.sum()]])
+    df_gen = pd.concat([df_gen, row], ignore_index=True)
+    print(f"Epoch {epoch+1}/{n_epochs}: Train Accuracy {cm.trace() / cm.sum()}, Test Accuracy {cm_test.trace() / cm_test.sum()}")
     
     val_loss = running_loss_test/total_test
     if val_loss < best_val_loss:
@@ -217,13 +207,42 @@ for epoch in range(n_epochs):
             print(f"Stopping early at epoch {epoch+1}")
             break
 
-# NOTE - MOVED THIS TO OUTSIDE EPOCH LOOP (NEW CODE VERSION) - RERUN
-
+# Get the best-performing model
 if best_weights is not None:
     model.load_state_dict(best_weights)
     print("Loaded best model from the epoch with lowest val_loss")
 
-df.to_csv(f"{folder}/Single_model_binary_repeat.csv")
+# Record all per-class metrics to be saved in dataframe
+
+all_perf = [train_recall, train_spec, train_f1, train_auc, 
+          test_recall, test_spec, test_f1, test_auc]
+
+for a in all_perf:
+    for b in a:
+        if len(b)< 8:
+            n_append = 8-len(b)
+            add = [float("nan") for _ in range(n_append)]
+            b.extend(add)
+        else:
+            pass
+
+rows = []
+for epoch in range(len(train_recall[0])):            # number of recorded epochs
+    for k in range(n_classes):
+        rows.append({
+            'Epoch':       epoch,
+            'Class':       k,
+            'Train_Recall': train_recall[k][epoch],
+            'Train_Spec':   train_spec[k][epoch],
+            'Train_F1':     train_f1[k][epoch],
+            'Train_AUC':    train_auc[k][epoch],
+            'Test_Recall':  test_recall[k][epoch],
+            'Test_Spec':    test_spec[k][epoch],
+            'Test_F1':      test_f1[k][epoch],
+            'Test_AUC':     test_auc[k][epoch],
+        })
+
+df_perclass = pd.DataFrame(rows, columns=perfcols_perclass)
 
 # Evaluate on test / holdout set 
 
@@ -234,17 +253,17 @@ model.eval()
 all_labels = []
 all_probs = []
 all_preds = []
-running_loss = 0
+running_loss_holdout = 0
 
 with torch.no_grad():
-    for image, label, _ in holdout_loader:
+    for image, _, label in holdout_loader:
         outputs = model(image)
         all_labels.append(label)
-        probs = torch.softmax(outputs, dim=1)[:,1]
-        all_probs.append(probs)
+        probs = torch.softmax(outputs, dim=1)
+        all_probs.append(probs.detach())
         _, preds = torch.max(outputs, 1)
         all_preds.append(preds)
-        running_loss += criterion(outputs, label).item() * label.size(0)
+        running_loss_holdout += criterion(outputs, label).item() * label.size(0)
 
 all_holdout_labels = torch.cat(all_labels).detach().numpy()
 all_holdout_probs  = torch.cat(all_probs).detach().numpy()
@@ -252,19 +271,36 @@ all_holdout_preds = torch.cat(all_preds).detach().numpy()
 
 cm_holdout = confusion_matrix(all_holdout_labels, all_holdout_preds)
 total_holdout = cm_holdout.sum()
-auc_holdout = auc(all_holdout_labels, all_holdout_probs)
+overall_acc = np.trace(cm_holdout) / total_holdout
+avg_loss = running_loss_holdout / total_holdout
 
-tp_holdout = cm_holdout[1,1]
-fn_holdout = cm_holdout[1, 0]
-fp_holdout = cm_holdout[0,1]
-tn_holdout = cm_holdout[0,0]
-rec_holdout = tp_holdout/(tp_holdout+fn_holdout) if (tp_holdout+fn_holdout) >0 else 0
-spec_holdout = tn_holdout/(tn_holdout+fp_holdout) if (tn_holdout+fp_holdout) >0 else 0
-f1_holdout = tp_holdout / (tp_holdout+0.5*(fp_holdout+fn_holdout)) if (tp_holdout+0.5*(fp_holdout+fn_holdout))>0 else 0 
+perclass_rows = []
+for k in range(n_classes):
+    tp_holdout = cm_holdout[k,k]
+    fn_holdout = cm_holdout[k, :].sum() - tp_holdout
+    fp_holdout = cm_holdout[:, k].sum() - tp_holdout
+    tn_holdout = total_holdout - (tp_holdout + fn_holdout + fp_holdout)
+    rec_holdout = tp_holdout/(tp_holdout+fn_holdout) if (tp_holdout+fn_holdout) >0 else 0
+    spec_holdout = tn_holdout/(tn_holdout+fp_holdout) if (tn_holdout+fp_holdout) >0 else 0
+    f1_holdout = tp_holdout / (tp_holdout+0.5*(fp_holdout+fn_holdout)) if (tp_holdout+0.5*(fp_holdout+fn_holdout))>0 else 0 
+    auc_holdout    = auc((all_holdout_labels == k).astype(int), all_holdout_probs[:, k])
 
-perfcols_h = ['Loss', 'Accuracy', 'Recall', 'Specificity', 'F1', 'AUC']
-perf_row = [running_loss/total_holdout, (tp_holdout+tn_holdout)/total_holdout, 
-           rec_holdout, spec_holdout, f1_holdout, auc_holdout]
+    perclass_rows.append({
+        'Class':         k,
+        'Holdout_Recall':    rec_holdout,
+        'Holdout_Specificity': spec_holdout,
+        'Holdout_F1':         f1_holdout,
+        'Holdout_AUC':        auc_holdout,
+    })
 
-perf_h = pd.DataFrame(data = [perf_row], columns = perfcols_h )
-perf_h.to_csv("convnext_v2_outputs/Single_Model/Single_model_binary_holdout_repeat.csv")  
+df_holdout_perclass = pd.DataFrame(perclass_rows, columns=['Class','Holdout_Recall',
+                                                           'Holdout_Specificity','Holdout_F1','Holdout_AUC'])
+df_holdout_summary = pd.DataFrame([{'Holdout_Loss':  avg_loss, 'Holdout_Accuracy': overall_acc}])
+
+# Save all performances
+
+df_gen.to_csv(f"{folder}/Epochs_summary.csv")
+df_perclass.to_csv(f"{folder}/Epochs_perclass.csv")
+df_holdout_perclass.to_csv(f"{folder}/Holdout_perclass.csv")
+df_holdout_summary.to_csv(f"{folder}/Holdout_summary.csv")
+
