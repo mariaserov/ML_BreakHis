@@ -72,8 +72,6 @@ test_loader = DataLoader(test, batch_size=params['batch_size'], shuffle=False)
 folder = 'convnext_v2_outputs/Single_Model'
 perfcols = ['Epoch', 'Train_Loss', 'Train_Acc', 'Train_Recall', 'Train_Spec', 'Train_F1', 'Train_AUC',
           'Test_Loss', 'Test_Acc', 'Test_Recall', 'Test_Spec', 'Test_F1', 'Test_AUC' ]
-df = pd.read_csv(f"{folder}/Single_model_binary.csv", index_col = 'Unnamed: 0') # tracking performance
-
 
 model = timm.create_model('convnextv2_atto.fcmae', pretrained=True, num_classes=2)
 for param in model.parameters(): # Freeze all
@@ -87,6 +85,7 @@ for a in range(1, 4):
 optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad],lr=params['lr'], weight_decay = params['weight_decay'])
 criterion = nn.CrossEntropyLoss()
 
+# Tracking performance
 train_loss = []
 test_loss = []
 train_acc = []
@@ -99,6 +98,8 @@ train_f1= []
 test_f1= []
 train_auc= []
 test_auc= []
+
+df = pd.DataFrame(columns = perfcols)
 
 # Define values for early stopping
 
@@ -222,6 +223,7 @@ for epoch in range(n_epochs):
 if best_weights is not None:
     model.load_state_dict(best_weights)
     print("Loaded best model from the epoch with lowest val_loss")
+    torch.save(model.state_dict(), f"{folder}/best_model_binary.pth")
 
 df.to_csv(f"{folder}/Single_model_binary_repeat.csv")
 

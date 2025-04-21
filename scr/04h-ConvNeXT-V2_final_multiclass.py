@@ -24,7 +24,7 @@ import numpy as np
 n_epochs = 30
 n_classes = 8
 patience = 5                  # how many epochs to wait
-folder = 'convnext_v2_outputs/Single_Model/Multi-class'
+folder = 'convnext_v2_outputs/Single_Model/Multiclass'
 
 # Array job 
 
@@ -211,6 +211,7 @@ for epoch in range(n_epochs):
 if best_weights is not None:
     model.load_state_dict(best_weights)
     print("Loaded best model from the epoch with lowest val_loss")
+    torch.save(model.state_dict(), f"{folder}/best_model_multiclass.pth")
 
 # Record all per-class metrics to be saved in dataframe
 
