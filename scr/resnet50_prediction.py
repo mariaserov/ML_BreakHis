@@ -10,14 +10,16 @@ from tensorflow.keras.applications.resnet50 import preprocess_input
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score,ConfusionMatrixDisplay
 from tensorflow.keras.models import load_model
 
+#set working directory
+
 # List of model filenames to evaluate
-model_files = [
-    "resnet50_last_5_blocks_multiclass.h5",
-    "resnet50_last_4_blocks_multiclass.h5",
-    "resnet50_last_3_blocks_multiclass.h5",
-    "resnet50_last_2_blocks_multiclass.h5",
-    "resnet50_last_1_blocks_multiclass.h5",
-    "resnet50_last_0_blocks_multiclass.h5",
+model_files = ["/rds/general/user/ft824/home/ML_BreakHis/scr/resnet50_output/resnet50_HPO_output/models_multiclass/multiclass_job20_bs32_lr1e-05_adam_wd0.h5"
+    #"resnet50_last_5_blocks_multiclass.h5",
+    #"resnet50_last_4_blocks_multiclass.h5",
+    #"resnet50_last_3_blocks_multiclass.h5",
+    #"resnet50_last_2_blocks_multiclass.h5",
+    #"resnet50_last_1_blocks_multiclass.h5",
+    #"resnet50_last_0_blocks_multiclass.h5",
     # Add more models here if needed
 ]
 
