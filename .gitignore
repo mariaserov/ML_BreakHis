@@ -6,4 +6,3 @@ train_aug/
 *.h5
 DenseNet/densenet_block
 DenseNet/densenet_hpo
-DenseNet/densenet_output
