@@ -1,5 +1,5 @@
 #PBS -l walltime=12:00:00
-#PBS -l select=1:ncpus=8:mem=64gb
+#PBS -l select=1:ncpus=32:mem=64gb
 #PBS -N DenseNet121_block
 #PBS -J 1-8
 

@@ -83,8 +83,9 @@ x = GlobalAveragePooling2D()(x)
 x = Dense(512, activation='relu', kernel_regularizer=L2(params["weight_decay"]))(x)
 x = Dropout(params["dropout_rate"])(x)
 predictions = Dense(8, activation='softmax')(x)
+print("Model output shape should be (None, 8)")
 model = Model(inputs=base_model.input, outputs=predictions)
-
+print("Final model output layer:", model.output_shape)
 print(model)
 
 # ================================
@@ -121,7 +122,7 @@ model.compile(
 
 callbacks = [
     EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-    ModelCheckpoint(f"densenet121_hpo_{idx}.h5", save_best_only=True)
+    ModelCheckpoint(f"densenet121_hpo_{idx}_multi.h5", save_best_only=True)
 ]
 
 # Time the training
@@ -134,10 +135,12 @@ history = model.fit(
     callbacks=callbacks
 )
 
-with open(f'densenet_hpo/models/hpo_model_{idx}.pickle', 'wb') as handle:
+
+
+with open(f'densenet_hpo/models/hpo_model_{idx}_multi.pickle', 'wb') as handle:
     pickle.dump(model, handle)
 
-with open(f'densenet_hpo/history/hpo_history_{idx}.pickle', 'wb') as handle:
+with open(f'densenet_hpo/history/hpo_history_{idx}_multi.pickle', 'wb') as handle:
     pickle.dump(history, handle)
 
 end_time = time.time()

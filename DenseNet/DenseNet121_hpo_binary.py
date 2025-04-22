@@ -22,7 +22,8 @@ tf.config.threading.set_inter_op_parallelism_threads(20)
 # ================================
 # 1. Parse Block Index
 # ================================
-n_epochs = 12
+# n_epochs = 12
+n_epochs = 1
 idx = int(os.environ['PBS_ARRAY_INDEX'])
 
 hyperparameters = {
@@ -59,7 +60,7 @@ datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
 train_generator = datagen.flow_from_dataframe(
     dataframe=train_df,
     x_col='filepath',
-    y_col='tumor_subtype',
+    y_col='label',
     target_size=(image_size, image_size),
     batch_size=params['batch_size'],
     class_mode='categorical'
@@ -68,7 +69,7 @@ train_generator = datagen.flow_from_dataframe(
 test_generator = datagen.flow_from_dataframe(
     dataframe=test_df,
     x_col='filepath',
-    y_col='tumor_subtype',
+    y_col='label',
     target_size=(image_size, image_size),
     batch_size=params['batch_size'],
     class_mode='categorical'
@@ -115,7 +116,7 @@ print(f"Unfreezing layers {start} to {end}")
 
 model.compile(
     optimizer=Adam(learning_rate=params['learning_rate'], weight_decay=params['weight_decay']),
-    loss='categorical_crossentropy',
+    loss='binary_crossentropy',
     metrics=['accuracy', 'f1_score', 'AUC', 'Precision', 'Recall', 'TruePositives', 'TrueNegatives', 'FalsePositives', 'FalseNegatives']
 )
 
@@ -134,10 +135,10 @@ history = model.fit(
     callbacks=callbacks
 )
 
-with open(f'densenet_hpo/models/hpo_model_{idx}.pickle', 'wb') as handle:
+with open(f'densenet_hpo/models/hpo_model_{idx}_binary.pickle', 'wb') as handle:
     pickle.dump(model, handle)
 
-with open(f'densenet_hpo/history/hpo_history_{idx}.pickle', 'wb') as handle:
+with open(f'densenet_hpo/history/hpo_history_{idx}_binary.pickle', 'wb') as handle:
     pickle.dump(history, handle)
 
 end_time = time.time()
