@@ -10,6 +10,10 @@ from tensorflow.keras.applications.resnet50 import preprocess_input
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score,ConfusionMatrixDisplay
 from tensorflow.keras.models import load_model
 
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import LabelBinarizer
+
+
 #set working directory
 
 # List of model filenames to evaluate
@@ -69,6 +73,7 @@ true_classes = holdout_data['tumor_subtype']
 true_labels = holdout_data['tumor_subtype'].tolist()
 
 
+
 for model_path in model_files:
     print(f"\n--- Evaluating {model_path} ---")
     
@@ -79,7 +84,29 @@ for model_path in model_files:
     predictions = model.predict(unseen_generator)
     predicted_classes = np.argmax(predictions, axis=1)
     predicted_labels = [index_to_label[i] for i in predicted_classes]
+    # One-hot encode true labels
+    lb = LabelBinarizer()
+    true_labels_bin = lb.fit_transform(true_labels)
+    if true_labels_bin.shape[1] == 1:
+        true_labels_bin = np.hstack([1 - true_labels_bin, true_labels_bin])
 
+    # Overall AUC
+    try:
+        macro_auc = roc_auc_score(true_labels_bin, predictions, multi_class='ovr', average='macro')
+    except ValueError:
+        macro_auc = None
+
+        # Per-class AUC
+    per_class_auc = {}
+    for i, class_name in enumerate(lb.classes_):
+        try:
+            auc_score = roc_auc_score(true_labels_bin[:, i], predictions[:, i])
+            per_class_auc[class_name] = auc_score
+        except ValueError:
+            per_class_auc[class_name] = None
+
+
+    
     # Classification report
     report_dict = classification_report(true_labels, predicted_labels, output_dict=True)
     report_df = pd.DataFrame(report_dict).transpose()
@@ -87,6 +114,11 @@ for model_path in model_files:
     # Add accuracy manually
     accuracy = accuracy_score(true_labels, predicted_labels)
     report_df.loc['accuracy'] = [accuracy, None, None, None]
+    report_df.loc['auc_macro'] = [macro_auc, None, None, None]
+
+    # Add per-class AUCs
+    report_df['AUC'] = report_df.index.map(per_class_auc).fillna('')
+
 
     # Confusion matrix
     cm = confusion_matrix(true_labels, predicted_labels, labels=labels)
