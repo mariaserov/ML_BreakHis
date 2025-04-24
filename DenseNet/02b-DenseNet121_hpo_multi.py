@@ -1,0 +1,147 @@
+import os
+import sys
+import time
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras.applications import DenseNet121
+from tensorflow.keras.applications.densenet import preprocess_input
+from tensorflow.keras.models import Model
+from tensorflow.keras.regularizers import L2
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import pickle
+import itertools
+
+tf.config.threading.set_intra_op_parallelism_threads(20)
+tf.config.threading.set_inter_op_parallelism_threads(20)
+
+# ================================
+# 1. Parse Block Index
+# ================================
+n_epochs = 12
+idx = int(os.environ['PBS_ARRAY_INDEX'])
+
+hyperparameters = {
+    'batch_size': [16,32],
+    'learning_rate': [0.0001, 0.01, 0.1],
+    'dropout_rate': [0.5, 0.2],
+    'weight_decay': [0, 0.00001, 0.01],
+}
+keys, values = zip(*hyperparameters.items())
+param_grid = [dict(zip(keys, v)) for v in itertools.product(*values)]
+
+if idx >= len(param_grid):
+    print(f"Error: parameters id is {len(param_grid)}")
+    sys.exit(1)
+
+params = param_grid[idx]
+print(f"Running job {idx} with config: {params}")
+
+# ================================
+# 2. Load Data
+# ================================
+os.chdir("/rds/general/user/js4124/home/ML_BreakHis/DenseNet")
+
+train_df = pd.read_csv('../data/augmented_train_dataset.csv')
+test_df = pd.read_csv('../data/new_test.csv')
+
+train_df['tumor_subtype'] = train_df['tumor_subtype'].astype(str)
+test_df['tumor_subtype'] = test_df['tumor_subtype'].astype(str)
+train_df['filepath'] = train_df['filepath'].str.replace(r"^\../", "../data/", regex=True)
+
+image_size = 224
+datagen = ImageDataGenerator(preprocessing_function=preprocess_input)
+
+train_generator = datagen.flow_from_dataframe(
+    dataframe=train_df,
+    x_col='filepath',
+    y_col='tumor_subtype',
+    target_size=(image_size, image_size),
+    batch_size=params['batch_size'],
+    class_mode='categorical'
+)
+
+test_generator = datagen.flow_from_dataframe(
+    dataframe=test_df,
+    x_col='filepath',
+    y_col='tumor_subtype',
+    target_size=(image_size, image_size),
+    batch_size=params['batch_size'],
+    class_mode='categorical'
+)
+
+# ================================
+# 3. Define Model
+# ================================
+base_model = DenseNet121(weights='imagenet', include_top=False, input_shape=(image_size, image_size, 3))
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(512, activation='relu', kernel_regularizer=L2(params["weight_decay"]))(x)
+x = Dropout(params["dropout_rate"])(x)
+predictions = Dense(8, activation='softmax')(x)
+print("Model output shape should be (None, 8)")
+model = Model(inputs=base_model.input, outputs=predictions)
+print("Final model output layer:", model.output_shape)
+print(model)
+
+# ================================
+# 4. Define Layer Ranges for 7 Blocks
+# ================================
+# block_ranges = {
+#     0: (0, 6),      # Conv + Pooling
+#     1: (7, 86),     # Dense Block 1 + Transition 1
+#     2: (87, 186),   # Dense Block 2 + Transition 2
+#     3: (187, 346),  # Dense Block 3 + Transition 3
+#     4: (347, 482),  # Dense Block 4
+#     5: (483, 483),  # Global Average Pooling
+#     6: (484, 486),  # Classifier
+# }
+# After the previous measurements, we can decided to train on the last 5 blocks
+
+for layer in model.layers:
+    layer.trainable = False
+
+start, end = 87, 486
+for layer in model.layers[start:end +1]:
+    layer.trainable = True
+print(f"Unfreezing layers {start} to {end}")
+
+# ================================
+# 6. Compile and Train
+# ================================
+
+model.compile(
+    optimizer=Adam(learning_rate=params['learning_rate'], weight_decay=params['weight_decay']),
+    loss='categorical_crossentropy',
+    metrics=['accuracy', 'f1_score', 'AUC', 'Precision', 'Recall', 'TruePositives', 'TrueNegatives', 'FalsePositives', 'FalseNegatives']
+)
+
+callbacks = [
+    EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
+    ModelCheckpoint(f"densenet121_hpo_{idx}_multi.h5", save_best_only=True)
+]
+
+# Time the training
+start_time = time.time()
+
+history = model.fit(
+    train_generator,
+    epochs=n_epochs,
+    validation_data=test_generator,
+    callbacks=callbacks
+)
+
+
+
+with open(f'densenet_hpo/models/hpo_model_{idx}_multi.pickle', 'wb') as handle:
+    pickle.dump(model, handle)
+
+with open(f'densenet_hpo/history/hpo_history_{idx}_multi.pickle', 'wb') as handle:
+    pickle.dump(history, handle)
+
+end_time = time.time()
+print(f"Total runtime: {(end_time - start_time) / 60:.2f} minutes")
