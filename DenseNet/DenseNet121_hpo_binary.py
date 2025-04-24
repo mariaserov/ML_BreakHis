@@ -22,8 +22,8 @@ tf.config.threading.set_inter_op_parallelism_threads(20)
 # ================================
 # 1. Parse Block Index
 # ================================
-# n_epochs = 12
-n_epochs = 1
+n_epochs = 12
+
 idx = int(os.environ['PBS_ARRAY_INDEX'])
 
 hyperparameters = {
@@ -122,7 +122,7 @@ model.compile(
 
 callbacks = [
     EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-    ModelCheckpoint(f"densenet121_hpo_{idx}.h5", save_best_only=True)
+    ModelCheckpoint(f"densenet121_hpo_{idx}_binary.h5", save_best_only=True)
 ]
 
 # Time the training
