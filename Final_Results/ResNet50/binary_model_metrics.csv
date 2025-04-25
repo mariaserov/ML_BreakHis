@@ -1,2 +1,2 @@
-Accuracy,F1 Score,Precision,Recall,Specificity,AUC
-0.974,0.981,0.975,0.986,0.948,0.996
+Loss,Accuracy,F1 Score,Precision,Recall,Specificity,AUC
+0.0805,0.974,0.981,0.975,0.986,0.948,0.996
