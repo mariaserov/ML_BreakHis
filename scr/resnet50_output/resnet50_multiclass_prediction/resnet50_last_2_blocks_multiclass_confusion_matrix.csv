@@ -1,0 +1,9 @@
+,adenosis,ductal_carcinoma,fibroadenoma,lobular_carcinoma,mucinous_carcinoma,papillary_carcinoma,phyllodes_tumor,tubular_adenoma
+adenosis,86,4,6,3,8,0,2,0
+ductal_carcinoma,3,751,8,29,49,0,0,1
+fibroadenoma,1,9,258,2,0,1,1,3
+lobular_carcinoma,0,62,0,66,37,0,0,0
+mucinous_carcinoma,2,13,5,1,149,0,0,1
+papillary_carcinoma,0,71,12,0,14,51,2,1
+phyllodes_tumor,0,6,47,0,3,0,43,1
+tubular_adenoma,3,3,26,1,17,4,0,112
