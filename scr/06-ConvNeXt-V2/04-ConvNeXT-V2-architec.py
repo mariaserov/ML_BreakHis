@@ -48,7 +48,7 @@ class BreakHisDataset(Dataset): # Subclass Dataset, which is required for using 
         return image, torch.tensor(label, dtype=torch.long)
 
 
-## TEMP - UNCOMMENT LATER 
+## get data
 
 dataset_train = BreakHisDataset(csv_path="../data/augmented_train_dataset.csv", transform=transform) # Load the data
 dataset_test = BreakHisDataset(csv_path="../data/new_test.csv", transform=transform)
